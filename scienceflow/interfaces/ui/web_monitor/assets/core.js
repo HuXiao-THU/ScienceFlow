@@ -76,7 +76,7 @@ function legend(parent, items) {
 }
 function currentTaskRoute() {
   const match = location.hash.match(
-    /^#task\/(\d+)(?:\/(monitor|report))?$/,
+    /^#task\/(\d+)(?:\/(monitor|report|trajectory))?$/,
   );
   return match
     ? { key: match[1], mode: match[2] || "monitor" }

@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import math
 import os
 import re
 import sys
@@ -13,11 +14,24 @@ from urllib.parse import parse_qs, urlsplit
 
 import psutil
 
+from scienceflow.interfaces.ui.trajectory.store import TrajectoryStore
+
 from .data import WorkspaceMonitor
 from .page import PAGE
 from .service import directory
 
 DEFAULT_REFRESH_SEC = 10.0
+
+
+def _json_safe(value):
+    """Replace non-finite floats so the monitor can always serialize a snapshot."""
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, dict):
+        return {key: _json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_json_safe(item) for item in value]
+    return value
 
 
 class MonitorServer(ThreadingHTTPServer):
@@ -27,6 +41,7 @@ class MonitorServer(ThreadingHTTPServer):
         super().__init__(address, Handler)
         self.token = token
         self.monitor = WorkspaceMonitor(workspace)
+        self.trajectory = TrajectoryStore()
         self.snapshot = {"tasks": [], "updated_at": None, "loading": True}
         self.details = {}
         self.requested = {}
@@ -174,6 +189,74 @@ class Handler(BaseHTTPRequestHandler):
         values = parse_qs(urlsplit(self.path).query).get("fresh", ())
         return any(value == "1" for value in values)
 
+    def query(self, name, default=""):
+        values = parse_qs(urlsplit(self.path).query).get(name)
+        return values[0] if values else default
+
+    def trajectory_reply(self, key, action):
+        with self.server.state_lock:
+            known = any(task["key"] == key for task in self.server.snapshot["tasks"])
+        if not known:
+            self.reply(404, {"error": "Unknown task"})
+            return
+        root = self.server.monitor.task_root(key)
+        if root is None:
+            self.reply(404, {"error": "Task workspace unavailable"})
+            return
+        store = self.server.trajectory
+        try:
+            if action == "":
+                if self.fresh():
+                    store.invalidate(root)
+                self.reply(200, _json_safe(store.index(root)))
+                return
+            worker = self.query("worker")
+            if not worker:
+                self.reply(400, {"error": "worker is required"})
+                return
+            if action == "calls":
+                lineage = self.query("lineage")
+                if not lineage:
+                    self.reply(400, {"error": "lineage is required"})
+                    return
+                self.reply(200, _json_safe(store.calls(root, worker, lineage)))
+                return
+            if action in {"call", "raw"}:
+                session = self.query("session")
+                call = self.query("call")
+                if not session or not call:
+                    self.reply(400, {"error": "session and call are required"})
+                    return
+                detail = store.detail(root, worker, session, call)
+                if detail is None:
+                    self.reply(404, {"error": "Call not found"})
+                    return
+                detail = _json_safe(detail)
+                if action == "raw":
+                    body = json.dumps(detail, ensure_ascii=False, indent=2)
+                    self.reply(
+                        200,
+                        body,
+                        "application/json",
+                        disposition='attachment; filename="scienceflow-call.json"',
+                    )
+                else:
+                    self.reply(200, detail)
+                return
+            if action == "tool":
+                stage = self.query("stage")
+                raw = self.query("raw")
+                path = store.tool_raw(root, worker, stage, raw)
+                if path is None:
+                    self.reply(404, {"error": "Tool output unavailable"})
+                    return
+                body = path.read_bytes()
+                self.reply(200, body, "text/plain")
+                return
+            self.reply(404, {"error": "Not found"})
+        except (OSError, ValueError, TypeError, KeyError) as exc:
+            self.reply(500, {"error": type(exc).__name__})
+
     def do_GET(self):
         route = self.route()
         if route == "":
@@ -202,6 +285,10 @@ class Handler(BaseHTTPRequestHandler):
             with self.server.state_lock:
                 snapshot = self.server.snapshot
             self.reply(200, snapshot)
+        elif route and (
+            match := re.fullmatch(r"task/(\d+)/trajectory(?:/(calls|call|tool|raw))?", route)
+        ):
+            self.trajectory_reply(match.group(1), match.group(2) or "")
         elif route and (
             match := re.fullmatch(r"task/(\d+)(?:/(report(?:\.(?:md|html))?))?", route)
         ):

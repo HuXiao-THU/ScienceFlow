@@ -31,6 +31,9 @@ def test_page_bundles_packaged_assets_and_real_version():
     assert "Math.max(10000" in PAGE
     assert "function currentTaskRoute" in PAGE
     assert "Run monitor" in PAGE and "Research report" in PAGE
+    assert "Agent trajectory" in PAGE
+    assert "function renderTrajectory" in PAGE
+    assert "function trajectoryLoadCalls" in PAGE
     assert "Save PDF" in PAGE
     assert "choose Save as PDF" in PAGE
     assert "frame.contentWindow.print()" in PAGE

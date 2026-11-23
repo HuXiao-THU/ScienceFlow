@@ -3,6 +3,7 @@ function taskTabs(parent, key, mode) {
   for (const [value, label] of [
     ["monitor", "Run monitor"],
     ["report", "Research report"],
+    ["trajectory", "Agent trajectory"],
   ]) {
     const link = add(tabs, "a", label, "task-tab");
     link.href = `#task/${key}/${value}`;
@@ -48,7 +49,8 @@ function renderReport(task, key, report) {
             signal: AbortSignal.timeout(120000),
           });
           const value = await response.json();
-          if (!response.ok) throw Error(value.error || "Report generation failed");
+          if (!response.ok)
+            throw Error(value.error || "Report generation failed");
           last = "";
           refreshSoon();
         } catch (error) {
@@ -87,7 +89,8 @@ function renderReport(task, key, report) {
       frame.contentWindow.focus();
       frame.contentWindow.print();
     } catch {
-      hint.textContent = "Printing unavailable. Download HTML and print it from your browser.";
+      hint.textContent =
+        "Printing unavailable. Download HTML and print it from your browser.";
     }
   };
   frame.onload = () => {
@@ -180,15 +183,16 @@ function renderMonitor(data, detail, task) {
     events,
     "pre",
     (detail?.events || [])
-      .map((event) =>
-        `${event.x_label || "Time unavailable"} · ${event.kind} · ${event.label}`,
+      .map(
+        (event) =>
+          `${event.x_label || "Time unavailable"} · ${event.kind} · ${event.label}`,
       )
       .join("\n") || "No events reported",
     "log-scroll",
   ).dataset.scrollKey = "trace-events";
 }
 
-function render(data, detail, key, report, mode) {
+function render(data, detail, key, report, mode, trajectory) {
   taskPage = Math.min(
     taskPage,
     Math.max(0, Math.ceil(data.tasks.length / 12) - 1),
@@ -232,10 +236,11 @@ function render(data, detail, key, report, mode) {
   );
   taskTabs(view, key, mode);
   if (mode === "report") renderReport(task, key, report);
+  else if (mode === "trajectory") renderTrajectory(key, trajectory);
   else renderMonitor(data, detail, task);
 }
 
-function renderPreservingScroll(data, detail, key, report, mode) {
+function renderPreservingScroll(data, detail, key, report, mode, trajectory) {
   const sameView =
     view.dataset.taskKey === (key || "") && view.dataset.taskMode === mode;
   const positions = new Map(
@@ -247,8 +252,8 @@ function renderPreservingScroll(data, detail, key, report, mode) {
   const expandedRecords = [...view.querySelectorAll("details")].map(
     (node) => node.open,
   );
-  render(data, detail, key, report, mode);
-  if (sameView)
+  render(data, detail, key, report, mode, trajectory);
+  if (sameView && mode !== "trajectory")
     view
       .querySelectorAll("details")
       .forEach((node, index) => (node.open = expandedRecords[index] || false));

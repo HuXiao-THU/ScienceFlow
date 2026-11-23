@@ -33,6 +33,7 @@ async function refresh() {
         delay = Math.max(10000, data.refresh_sec * 1000);
       let detail = null;
       let report = null;
+      let trajectory = null;
       if (key && mode === "monitor") {
         const response = await fetch(base + "task/" + key + fresh, {
           signal: AbortSignal.timeout(initialRefresh ? 30000 : 8000),
@@ -47,6 +48,16 @@ async function refresh() {
         if (!response.ok) throw Error("Report unavailable");
         report = await response.json();
       }
+      if (key && mode === "trajectory") {
+        const query = initialRefresh || trajectoryFresh ? "?fresh=1" : "";
+        const response = await fetch(
+          base + "task/" + key + "/trajectory" + query,
+          { signal: AbortSignal.timeout(60000) },
+        );
+        if (!response.ok) throw Error("Trajectory unavailable");
+        trajectory = await response.json();
+        trajectoryFresh = false;
+      }
       initialRefresh = false;
       const current = currentTaskRoute();
       if (key !== current.key || mode !== current.mode) return;
@@ -56,16 +67,17 @@ async function refresh() {
         data.resources,
         detail,
         report,
+        trajectory,
         key,
         mode,
         taskPage,
         workerPage,
       ]);
       const editing = document.activeElement?.matches(
-        ".worker-search, .zoom-toolbar input",
+        ".worker-search, .zoom-toolbar input, .tj-search",
       );
       if (fingerprint !== last && !lineageDragging && !editing) {
-        renderPreservingScroll(data, detail, key, report, mode);
+        renderPreservingScroll(data, detail, key, report, mode, trajectory);
         last = fingerprint;
       }
       document.querySelector("#fresh").textContent = data.updated_at
@@ -79,6 +91,7 @@ async function refresh() {
         ? `Refresh delayed (${data.error}); showing last snapshot`
         : "";
       if (mode === "report" && report?.available) delay = null;
+      if (mode === "trajectory" && trajectory?.available) delay = null;
     }
   } catch {
     document.querySelector("#error").textContent =

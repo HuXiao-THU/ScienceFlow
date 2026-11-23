@@ -31,6 +31,12 @@ _SCRIPTS = (
     "lineage_layout.js",
     "lineage_viewport.js",
     "lineage.js",
+    "trajectory_model.js",
+    "trajectory_nav.js",
+    "trajectory_timeline.js",
+    "trajectory_ledger.js",
+    "trajectory_inspector.js",
+    "trajectory_view.js",
     "view.js",
     "refresh.js",
 )
@@ -42,8 +48,12 @@ def build_page() -> str:
     script = "\n".join(
         assets.joinpath(name).read_text(encoding="utf-8") for name in _SCRIPTS
     )
+    css = "\n".join(
+        assets.joinpath(name).read_text(encoding="utf-8")
+        for name in ("theme.css", "trajectory.css")
+    )
     replacements = {
-        "__SCIENCEFLOW_CSS__": assets.joinpath("theme.css").read_text(encoding="utf-8"),
+        "__SCIENCEFLOW_CSS__": css,
         "__SCIENCEFLOW_JS__": "(() => {\n'use strict';\n" + script + "\n})();",
         "__SCIENCEFLOW_LOGO__": _brand_logo_svg(),
         "__SCIENCEFLOW_VERSION__": escape(_VERSION),
